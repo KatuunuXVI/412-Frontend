@@ -1,23 +1,24 @@
-
-
 import scala.io.Source
+import scala.collection
 import scala.collection.mutable
+import scala.collection.immutable.List
 import scala.util.control._
+
+//import Scanner
 object Frontend {
   val ILOCfunctions: mutable.Set[String] = mutable.Set("load","loadI","store","add","sub","mult","lshift","rshift","output","nop");
+  val AcceptingTokens: mutable.Set[String] = mutable.Set("load","loadI","store","add","sub","mult","lshift","rshift","output","nop","//",",","=>");
   var successfulScan: Boolean = true
-  val operations: List[Operation] = List.empty
+  //val operations: List[Operation] = List.empty
+  val scanner: ILOCScanner = new ILOCScanner
   def main(args: Array[String]): Unit = {
     for(arg <- args) {
       val filename = arg
-      //println(arg)
       var lineNumber: Int = 1
       val input = Source.fromFile(filename)
       for (line <- input.getLines.map(trimWhiteSpace)) {
-        if(!line.isEmpty && !isComment(line)) {
-          println("Parsing Line " + lineNumber + ": " + line)
-          parseLine(line,lineNumber)
-        }
+          //parseLine(line,lineNumber)
+        println(scanner.scanLine(line,lineNumber))
         lineNumber += 1
       }
       input.close()
@@ -46,7 +47,7 @@ object Frontend {
 
   def isValidConstant(word: String): Boolean = !word.forall(_.isDigit)
 
-  def parseWord(line: String): (String, String, Boolean) = {
+  def scanWord(line: String): (String, String, Boolean) = {
     var potCom: Boolean = false
     var comment: Boolean = false
     var index: Integer = 0
@@ -66,19 +67,19 @@ object Frontend {
     (word, trimWhiteSpace(line.substring(index)), comment)
   }
 
-  def parseLine(line: String, lineNumber: Int): Option[Operation] = {
+  def parseLine(line: String, lineNumber: Int): Unit = {
     var parse: String = line
     var comment: Boolean = false
-    val operationParse = parseWord(line)
+    val operationParse = scanWord(line)
     val operation: String = operationParse._1
     parse = operationParse._2
     comment = operationParse._3
     if(comment) {
       if(operation.isEmpty) {
-        return Option.empty
+        return //Option.empty
       } else {
         if(isValidOperation(operation)) System.err.println("Line " + lineNumber + ": Missing Parameters for " + operation) else System.err.println("Line " + lineNumber + ": " + operation + " is not a valid word")
-        return Option.empty
+        return //Option.empty
       }
     }
     if(isValidOperation(operation)) println("Valid Operator") else System.err.println("Line " + lineNumber + ": " + operation + " is not a valid word")
@@ -97,7 +98,7 @@ object Frontend {
     }
     ???
   }
-def parseThreePar(operation: String): Unit = {
+  def parseThreePar(operation: String): Unit = {
 
   }
 
@@ -114,7 +115,60 @@ def parseThreePar(operation: String): Unit = {
     if(index < line.length) line.substring(index) else ""
   }
 
-  case class Load(register1: String, register2: String)
+  class ILOCScanner {
+    val AcceptedTokens: mutable.Set[String] = mutable.Set("load","loadI","store","add","sub","mult","lshift","rshift","output","nop","//",",","=>")
+    def ValidRegisterLabel(register: String): Boolean = {
+      if(register.length == 1) {
+        register(0) == 'r'
+      } else {
+        register.length > 1 && register(0) == 'r' && register.substring(1).filterNot(_.isDigit).isEmpty
+      }
+    }
+    def ValidConstant(constant: String): Boolean = !constant.isEmpty && constant.filterNot(_.isDigit).isEmpty
+    def scanLine(line: String, lineNumber: Integer): (List[String], Boolean) = {
+      var index: Integer = 0
+      var tokenIndex: Integer = 0
+      var errorState: Boolean = false
+      var token: String = ""
+      var tokenList: List[String] = List.empty
+      var comment: Boolean = false
+      var PotentialTokens: mutable.Set[String] = AcceptedTokens
+      def c: Char = if(index >= line.length) line.last else line(index)
+      while(index < line.length && c.isWhitespace) {
+        index += 1
+      }
+      while(!errorState && index < line.length && !comment) {
+        if(!c.isWhitespace) PotentialTokens = PotentialTokens.filter(t => (tokenIndex < t.length) && (t(tokenIndex) == c))
+        println("SCANNING: Line " + lineNumber + ", Index: " + index + ", Token Index: " + tokenIndex + ", Token: " + token + ", Char: " + c + ", Tokens: " + tokenList)
+        println("Potential Tokens: " + PotentialTokens)
+        if(!ValidRegisterLabel(token + c) && !ValidConstant(token + c) && PotentialTokens.isEmpty) {
+          if(ValidRegisterLabel(token) || AcceptedTokens.contains(token) || ValidConstant(token)) {
+            tokenList = tokenList.::(token)
+            if(token == "//") comment = true
+            token = ""
+            tokenIndex = 0
+            PotentialTokens = AcceptedTokens
+          } else if(c == ' ') {
+            index += 1
+          }
+          else {
+            token += c
+            tokenList = tokenList.::(token)
+            errorState = true
+          }
+        } else {
+          println("SCAN: Added Character/Incremented Index")
+          if(!c.isWhitespace) {token += c; tokenIndex += 1}
+          index += 1
+        }
+      }
+      if(!errorState && (ValidRegisterLabel(token) || AcceptedTokens.contains(token) || ValidConstant(token)) && token != "//") tokenList = tokenList.::(token)
+      (tokenList, errorState)
+    }
+  }
 
-  abstract class Operation
+
 }
+
+
+
