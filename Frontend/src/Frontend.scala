@@ -18,7 +18,9 @@ object Frontend {
       val input = Source.fromFile(filename)
       for (line <- input.getLines.map(trimWhiteSpace)) {
           //parseLine(line,lineNumber)
-        println(scanner.scanLine(line,lineNumber))
+        val scan = scanner.scanLine(line,lineNumber)
+        print("Line " + lineNumber + " - ")
+        if(scan._2) println("Error: " + scan._1.reverse) else println("Success: " + scan._1.reverse)
         lineNumber += 1
       }
       input.close()
@@ -139,8 +141,8 @@ object Frontend {
       }
       while(!errorState && index < line.length && !comment) {
         if(!c.isWhitespace) PotentialTokens = PotentialTokens.filter(t => (tokenIndex < t.length) && (t(tokenIndex) == c))
-        println("SCANNING: Line " + lineNumber + ", Index: " + index + ", Token Index: " + tokenIndex + ", Token: " + token + ", Char: " + c + ", Tokens: " + tokenList)
-        println("Potential Tokens: " + PotentialTokens)
+        //println("SCANNING: Line " + lineNumber + ", Index: " + index + ", Token Index: " + tokenIndex + ", Token: " + token + ", Char: " + c + ", Tokens: " + tokenList)
+        //println("Potential Tokens: " + PotentialTokens)
         if(!ValidRegisterLabel(token + c) && !ValidConstant(token + c) && PotentialTokens.isEmpty) {
           if(ValidRegisterLabel(token) || AcceptedTokens.contains(token) || ValidConstant(token)) {
             tokenList = tokenList.::(token)
@@ -148,8 +150,6 @@ object Frontend {
             token = ""
             tokenIndex = 0
             PotentialTokens = AcceptedTokens
-          } else if(c == ' ') {
-            index += 1
           }
           else {
             token += c
@@ -157,12 +157,12 @@ object Frontend {
             errorState = true
           }
         } else {
-          println("SCAN: Added Character/Incremented Index")
+          //println("SCAN: Added Character/Incremented Index")
           if(!c.isWhitespace) {token += c; tokenIndex += 1}
           index += 1
         }
       }
-      if(!errorState && (ValidRegisterLabel(token) || AcceptedTokens.contains(token) || ValidConstant(token)) && token != "//") tokenList = tokenList.::(token)
+      if(!errorState && (ValidRegisterLabel(token) || AcceptedTokens.contains(token) || ValidConstant(token)) && token != "") tokenList = tokenList.::(token)
       (tokenList, errorState)
     }
   }
