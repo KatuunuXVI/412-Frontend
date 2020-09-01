@@ -1,3 +1,4 @@
+l oad  r1 => r2
 // COMP 412, Rice University
 // ILOC Front End
 // 

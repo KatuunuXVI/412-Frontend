@@ -135,16 +135,18 @@ object Frontend {
       var tokenList: List[String] = List.empty
       var comment: Boolean = false
       var PotentialTokens: mutable.Set[String] = AcceptedTokens
+      var errorWord: Option[String] = Option.empty
+
       def c: Char = if(index >= line.length) line.last else line(index)
       while(index < line.length && c.isWhitespace) {
         index += 1
       }
       while(!errorState && index < line.length && !comment) {
         if(!c.isWhitespace) PotentialTokens = PotentialTokens.filter(t => (tokenIndex < t.length) && (t(tokenIndex) == c))
-        //println("SCANNING: Line " + lineNumber + ", Index: " + index + ", Token Index: " + tokenIndex + ", Token: " + token + ", Char: " + c + ", Tokens: " + tokenList)
-        //println("Potential Tokens: " + PotentialTokens)
-        if(!ValidRegisterLabel(token + c) && !ValidConstant(token + c) && PotentialTokens.isEmpty) {
+        if((!ValidRegisterLabel(token + c) && !ValidConstant(token + c) && PotentialTokens.isEmpty) || (c.isWhitespace && !token.isEmpty)) {
+          //print("Token: " + token + " - ")
           if(ValidRegisterLabel(token) || AcceptedTokens.contains(token) || ValidConstant(token)) {
+            //println("Valid")
             tokenList = tokenList.::(token)
             if(token == "//") comment = true
             token = ""
@@ -152,12 +154,13 @@ object Frontend {
             PotentialTokens = AcceptedTokens
           }
           else {
+            //println("Invalid")
             token += c
             tokenList = tokenList.::(token)
+            errorWord = Option(token)
             errorState = true
           }
         } else {
-          //println("SCAN: Added Character/Incremented Index")
           if(!c.isWhitespace) {token += c; tokenIndex += 1}
           index += 1
         }
