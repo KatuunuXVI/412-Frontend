@@ -1,177 +1,305 @@
-import scala.io.Source
-import scala.collection
-import scala.collection.mutable
+import scala.collection.{immutable, mutable}
 import scala.collection.immutable.List
-import scala.util.control._
+import scala.io.Source
 
-//import Scanner
+//import ILOCScanner
 object Frontend {
-  val ILOCfunctions: mutable.Set[String] = mutable.Set("load","loadI","store","add","sub","mult","lshift","rshift","output","nop");
   val AcceptingTokens: mutable.Set[String] = mutable.Set("load","loadI","store","add","sub","mult","lshift","rshift","output","nop","//",",","=>");
   var successfulScan: Boolean = true
-  //val operations: List[Operation] = List.empty
+
   val scanner: ILOCScanner = new ILOCScanner
+  val parser: ILOCParser = new ILOCParser
   def main(args: Array[String]): Unit = {
+    println("Hello World")
     for(arg <- args) {
       val filename = arg
       var lineNumber: Int = 1
+      var fullScan: List[List[Any]] = List.empty
       val input = Source.fromFile(filename)
-      for (line <- input.getLines.map(trimWhiteSpace)) {
+      for (line <- input.getLines) {
           //parseLine(line,lineNumber)
-        val scan = scanner.scanLine(line,lineNumber)
+        val scan: List[Any] = scanner.scanLine(line,lineNumber).reverse
         print("Line " + lineNumber + " - ")
-        if(scan._2) println("Error: " + scan._1.reverse) else println("Success: " + scan._1.reverse)
+        if(scan.contains(-1)) println("Error: " + scan) else println("Success: " + scan)
+        lineNumber += 1
+        fullScan = fullScan.::(scan.filterNot(l => l == -1 || l == 10))
+      }
+      fullScan = fullScan.reverse
+      input.close()
+      lineNumber = 0
+      for(i <- fullScan) {
+        parser.parse(i,lineNumber)
         lineNumber += 1
       }
-      input.close()
     }
 
   }
 
-  def isComment(word:String): Boolean = word.substring(0,2) =="//"
-
-  def isValidOperation(word: String): Boolean = ILOCfunctions.contains(word)
-
-  def isValidRegister(word: String): Boolean = {
-    val commaHead = word(0) == ','
-    val commaTail = word.last == ','
-    val regLabel = word(0) == 'r'
-    val regSecond = word(1) == 'r'
-    val regNumbered = isValidConstant(word.substring(1))
-    val regNumberedCH = isValidConstant(word.substring(2,word.length))
-    val regNumberedCT = isValidConstant(word.substring(1,word.length-1))
-    val regNumberedCHCT  = isValidConstant(word.substring(2, word.length-1))
-    (commaHead && regSecond && regNumberedCHCT && commaTail) || /** ,rx, **/
-      (regLabel && regNumberedCT && commaTail) || /** rx, **/
-      (commaHead && regSecond && regNumberedCH) || /** ,rx **/
-      (regLabel && regNumbered) /** rx **/
-  }
-
-  def isValidConstant(word: String): Boolean = !word.forall(_.isDigit)
-
-  def scanWord(line: String): (String, String, Boolean) = {
-    var potCom: Boolean = false
-    var comment: Boolean = false
-    var index: Integer = 0
-    val builder: String = trimWhiteSpace(line)
-    var word: String = ""
-    def curChar: Char = builder(index)
-    while(!comment && curChar != ' ' && index < builder.length) {
-      if(curChar == '/') {
-        if(!potCom) {word += curChar; potCom = true} else {comment = true; word = word.substring(0,index-1)}
-        index += 1
-      } else {
-        if(potCom) potCom = false
-        word += curChar
-        index += 1
-      }
-    }
-    (word, trimWhiteSpace(line.substring(index)), comment)
-  }
-
-  def parseLine(line: String, lineNumber: Int): Unit = {
-    var parse: String = line
-    var comment: Boolean = false
-    val operationParse = scanWord(line)
-    val operation: String = operationParse._1
-    parse = operationParse._2
-    comment = operationParse._3
-    if(comment) {
-      if(operation.isEmpty) {
-        return //Option.empty
-      } else {
-        if(isValidOperation(operation)) System.err.println("Line " + lineNumber + ": Missing Parameters for " + operation) else System.err.println("Line " + lineNumber + ": " + operation + " is not a valid word")
-        return //Option.empty
-      }
-    }
-    if(isValidOperation(operation)) println("Valid Operator") else System.err.println("Line " + lineNumber + ": " + operation + " is not a valid word")
-    Option.empty
-  }
-
-  def parseTwoPar(operation: String, line: String, lineNumber: Integer): Option[String] = {
-    if (operation == "loadI") {
-      var index: Int = 0
-
-      def curChar: Char = line(index)
-
-      var potCom: Boolean = false
-      var comment: Boolean = false
-      var constant: String = ""
-    }
-    ???
-  }
-  def parseThreePar(operation: String): Unit = {
-
-  }
-
-  def parseOutput(): Unit = {
-
-  }
-
-  def trimWhiteSpace(line: String): String = {
-    if(line.isEmpty) return line
-    var index: Int = 0
-    while(index < line.length && line(index) == ' ') {
-      index += 1
-    }
-    if(index < line.length) line.substring(index) else ""
-  }
 
   class ILOCScanner {
+    //val ILOCfunctions: mutable.Set[String] = mutable.Set("load","loadI","store","add","sub","mult","lshift","rshift","output","nop");
     val AcceptedTokens: mutable.Set[String] = mutable.Set("load","loadI","store","add","sub","mult","lshift","rshift","output","nop","//",",","=>")
-    def ValidRegisterLabel(register: String): Boolean = {
+    //def isValidOperation(word: String): Boolean = ILOCfunctions.contains(word)
+
+    def TokenMap(op: String): Any = {
+      op match {
+        case "load" => 0
+        case "loadI" => 1
+        case "store" => 2
+        case "add" => 3
+        case "sub" => 4
+        case "mult" => 5
+        case "lshift" => 6
+        case "rshift" => 7
+        case "output" => 8
+        case "nop" => 9
+        case "//" => 10
+        case "," => 11
+        case "=>" => 12
+        case " " => 15
+        case _=>
+          if(ValidRegisterLabel(op, true)) {
+            Register(Integer.parseInt(op.substring(1)),Option.empty)
+          } else if(ValidConstant(op)) {
+            Constant(Integer.parseInt(op))
+          } else {
+            -1
+          }
+        }
+      }
+
+
+    def ValidRegisterLabel(register: String, complete: Boolean): Boolean = {
       if(register.length == 1) {
-        register(0) == 'r'
+        if(complete) false else register(0) == 'r'
       } else {
         register.length > 1 && register(0) == 'r' && register.substring(1).filterNot(_.isDigit).isEmpty
       }
     }
+
+
     def ValidConstant(constant: String): Boolean = !constant.isEmpty && constant.filterNot(_.isDigit).isEmpty
-    def scanLine(line: String, lineNumber: Integer): (List[String], Boolean) = {
+
+    def scanLine(line: String, lineNumber: Integer): List[Any] = {
       var index: Integer = 0
       var tokenIndex: Integer = 0
       var errorState: Boolean = false
       var token: String = ""
-      var tokenList: List[String] = List.empty
+      var tokenList: List[Any] = List.empty
       var comment: Boolean = false
       var PotentialTokens: mutable.Set[String] = AcceptedTokens
-      var errorWord: Option[String] = Option.empty
 
       def c: Char = if(index >= line.length) line.last else line(index)
       while(index < line.length && c.isWhitespace) {
         index += 1
       }
-      while(!errorState && index < line.length && !comment) {
+      while(index < line.length && !comment) {
+        //println(c + " - Index: " + index + "/" + line.length)
         if(!c.isWhitespace) PotentialTokens = PotentialTokens.filter(t => (tokenIndex < t.length) && (t(tokenIndex) == c))
-        if((!ValidRegisterLabel(token + c) && !ValidConstant(token + c) && PotentialTokens.isEmpty) || (c.isWhitespace && !token.isEmpty)) {
-          //print("Token: " + token + " - ")
-          if(ValidRegisterLabel(token) || AcceptedTokens.contains(token) || ValidConstant(token)) {
+        if((!ValidRegisterLabel(token + c, false) && !ValidConstant(token + c) && PotentialTokens.isEmpty) || (c.isWhitespace && !token.isEmpty)) {
+          val tokenValue = TokenMap(token)
+          if(tokenValue != -1) {
             //println("Valid")
-            tokenList = tokenList.::(token)
+            tokenList = tokenList.::(tokenValue)
             if(token == "//") comment = true
             token = ""
             tokenIndex = 0
             PotentialTokens = AcceptedTokens
           }
           else {
-            //println("Invalid")
-            token += c
-            tokenList = tokenList.::(token)
-            errorWord = Option(token)
-            errorState = true
+            PotentialTokens = AcceptedTokens
+            if(c.isWhitespace && token.isEmpty) {
+              index += 1
+              token = ""
+              tokenIndex = 0
+            } else {
+              //println("Invalid")
+              token += c
+              //tokenList = tokenList.::(tokenValue)
+              System.err.println("Scanning Error: " + token + " is not a valid word")
+              tokenList = tokenList.::(tokenValue)
+              errorState = true
+              token = ""
+              tokenIndex = 0
+              index += 1
+
+            }
+
           }
         } else {
           if(!c.isWhitespace) {token += c; tokenIndex += 1}
           index += 1
         }
       }
-      if(!errorState && (ValidRegisterLabel(token) || AcceptedTokens.contains(token) || ValidConstant(token)) && token != "") tokenList = tokenList.::(token)
-      (tokenList, errorState)
+      if((TokenMap(token) != -1)) tokenList = tokenList.::(TokenMap(token))
+      tokenList
     }
   }
 
+  class ILOCParser {
+    def parse(line: List[Any], lineNumber: Integer): Option[Operation] = {
+      if(line.isEmpty) return Option.empty
+      val head = line.head
+      val tail = line.tail
+      head match {
+        case 0 | 2 => validMemOp(head.asInstanceOf[Int], tail, lineNumber)
+        case 2 => validLoadI(tail, lineNumber) //Option(validLoadI(tail))
+        case 3 | 4 | 5 | 6 | 7  => validArithOp(head.asInstanceOf[Int] ,tail,lineNumber) //Option(validArithOp(tail))
+        case 8 => validOutput(tail, lineNumber)//Option(validOutput(tail))
+        case 9 => validNop(tail,lineNumber) //Option(validNop(tail))
+        case _=>
+          System.err.println("PARSING ERROR [" + lineNumber + "]: Operation begins with invalid OpCode")
+          Option.empty
+      }
+    }
+
+    def validMemOp(opCode: Int, tokens: List[Any], lineNumber: Integer): Option[MemOp] = {
+      if(!tokens.head.isInstanceOf[Register]) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Source Register in Memory Operation")
+        Option.empty
+      } else if(tokens(1) != 12) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing \'=>\' in Memory Operation")
+        Option.empty
+      } else if(!tokens(2).isInstanceOf[Register]) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Target Register in Memory Operation")
+        Option.empty
+      } else if(tokens.length > 3) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+        Option.empty
+      }
+      else {
+        opCode match {
+          case 0 => Option(Load(tokens.head.asInstanceOf[Register],tokens(2).asInstanceOf[Register]))
+          case 2 => Option(Store(tokens.head.asInstanceOf[Register],tokens(2).asInstanceOf[Register]))
+        }
+      }
+    }
+
+    def validLoadI(tokens: List[Any], lineNumber: Int): Option[LoadI] = {
+      if(!tokens.head.isInstanceOf[Constant]) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Constant in LoadI Operation")
+        Option.empty
+      } else if(tokens(1) != 12) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing \'=>\' in Memory Operation")
+        Option.empty
+      } else if(!tokens.head.isInstanceOf[Register]) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Target Register in LoadI Operation")
+        Option.empty
+      } else if(tokens.length > 3) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+        Option.empty
+      } else {
+        Option(LoadI(tokens.head.asInstanceOf[Constant],tokens(2).asInstanceOf[Register]))
+      }
+    }
+
+    def validArithOp(opCode: Int, tokens: List[Any], lineNumber: Int): Option[ArithOp] = {
+      if(!tokens.head.isInstanceOf[Register]) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing First Source Register in Arithmetic Operation")
+        Option.empty
+      } else if(tokens(1) != 11) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Comma Separation in Arithmetic Operation")
+        Option.empty
+      } else if(!tokens(2).isInstanceOf[Register]) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Second Source Register in Arithmetic Operation")
+        Option.empty
+      } else if(tokens(3) != 12) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing \'=>\' in Arithmetic Operation")
+        Option.empty
+      } else if(!tokens(4).isInstanceOf[Register]) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Target Register in Arithmetic Operation")
+        Option.empty
+      } else if(tokens.length > 4) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+        Option.empty
+      } else {
+        opCode match {
+          case 3 => Option(Add(tokens.head.asInstanceOf[Register],tokens(2).asInstanceOf[Register],tokens(4).asInstanceOf[Register]))
+          case 4 => Option(Sub(tokens.head.asInstanceOf[Register],tokens(2).asInstanceOf[Register],tokens(4).asInstanceOf[Register]))
+          case 5 => Option(Mult(tokens.head.asInstanceOf[Register],tokens(2).asInstanceOf[Register],tokens(4).asInstanceOf[Register]))
+          case 6 => Option(LShift(tokens.head.asInstanceOf[Register],tokens(2).asInstanceOf[Register],tokens(4).asInstanceOf[Register]))
+          case 7 => Option(RShift(tokens.head.asInstanceOf[Register],tokens(2).asInstanceOf[Register],tokens(4).asInstanceOf[Register]))
+        }
+      }
+    }
+
+    def validOutput(tokens: List[Any], lineNumber: Int): Option[Output] = {
+      if(!tokens.head.isInstanceOf[Constant]) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Constant for Output")
+        Option.empty
+      } else if(tokens.length > 1) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+        Option.empty
+      }else {
+        Option(Output(tokens.head.asInstanceOf[Constant]))
+      }
+    }
+
+    def validNop(tokens: List[Any], lineNumber: Int): Option[Nop] = {
+      if(tokens.nonEmpty) {
+        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+        Option.empty
+      } else {
+        Option(Nop())
+      }
+    }
+  }
+
+  case class Load(r1: Register, r2: Register) extends MemOp(r1: Register, r2: Register) {
+    override def execute(): Unit = ???
+  }
+  case class Store(r1: Register, r2:Register) extends MemOp(r1: Register, r2: Register) {
+    override def execute(): Unit = ???
+  }
+
+  abstract class MemOp(r1: Register, r2: Register) extends Operation
+  case class LoadI(x: Constant, r: Register) extends Operation {
+    override def execute(): Unit = ???
+  }
+
+
+
+  case class Add(r1: Register, r2: Register, r3: Register) extends ArithOp(r1: Register, r2: Register, r3: Register) {
+    override def execute(): Unit = ???
+  }
+
+  case class Sub(r1: Register, r2: Register, r3: Register) extends ArithOp(r1: Register, r2: Register, r3: Register) {
+    override def execute(): Unit = ???
+  }
+
+  case class Mult(r1: Register, r2: Register, r3: Register) extends ArithOp(r1: Register, r2: Register, r3: Register) {
+    override def execute(): Unit = ???
+  }
+
+  case class LShift(r1: Register, r2: Register, r3: Register) extends ArithOp(r1: Register, r2: Register, r3: Register) {
+    override def execute(): Unit = ???
+  }
+
+  case class RShift(r1: Register, r2: Register, r3: Register) extends ArithOp(r1: Register, r2: Register, r3: Register) {
+    override def execute(): Unit = ???
+  }
+
+  abstract class ArithOp(r1: Register, r2: Register, r3: Register) extends Operation
+
+  case class Output(c: Constant) extends Operation {
+    override def execute(): Unit = ???
+  }
+
+  case class Nop() extends Operation {
+    override def execute(): Unit = ???
+  }
+
+  abstract class Operation {
+    def execute(): Unit
+  }
+
+  case class Register(label: Int, value: Option[Integer]) {
+
+  }
+
+  case class Constant(value: Int) {
+
+  }
 
 }
-
-
 
