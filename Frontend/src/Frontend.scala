@@ -9,32 +9,93 @@ object Frontend {
 
   val scanner: ILOCScanner = new ILOCScanner
   val parser: ILOCParser = new ILOCParser
+  var flag: String = "-p"
+  var flagPriority = 0
+  var filename = ""
+  var fileReceived = false
+  var errorCount: Int = 0
   def main(args: Array[String]): Unit = {
-    println("Hello World")
     for(arg <- args) {
-      val filename = arg
-      var lineNumber: Int = 1
-      var fullScan: List[List[Any]] = List.empty
-      val input = Source.fromFile(filename)
-      for (line <- input.getLines) {
-          //parseLine(line,lineNumber)
-        val scan: List[Any] = scanner.scanLine(line,lineNumber).reverse
-        print("Line " + lineNumber + " - ")
-        if(scan.contains(-1)) println("Error: " + scan) else println("Success: " + scan)
-        lineNumber += 1
-        fullScan = fullScan.::(scan.filterNot(l => l == -1 || l == 10))
-      }
-      fullScan = fullScan.reverse
-      input.close()
-      lineNumber = 0
-      for(i <- fullScan) {
-        parser.parse(i,lineNumber)
-        lineNumber += 1
+      arg match {
+        case "-h" =>
+          if(flagPriority < 4) {
+            flag = "-h"
+            flagPriority = 4
+          }
+        case "-s" =>
+          if(flagPriority < 1) {
+            flag = "-s"
+            flagPriority = 1
+          }
+        case "-p" =>
+          if(flagPriority < 2) {
+            flag = "-p"
+            flagPriority = 2
+          }
+        case "-r" =>
+          if(flagPriority < 3) {
+            flag = "-r"
+            flagPriority = 3
+          }
+        case _=>
+          if(filename.isEmpty) filename = arg else flag = "-h"
       }
     }
+    //println("Flag: " + flag)
+    flag match {
+      case "-h" =>
+        println("COMMAND SYNTAX: scala Frontend.scala [flag] <filename>\n")
+        println("REQUIRED ARGUMENTS: filename (absolute or relative) to the input\n")
+        println("OPTIONAL FLAGS:")
+        println("-h: Prints this message")
+        println("-r: Prints out Intermediate Representation")
+        println("-p: Prints out Parse Status")
+        println("-s: Prints out all found tokens")
+      case "-r" =>
+        val IR = scanAndParse(filename)
+        if(errorCount == 0) {
+          for(op <- IR.filter(_.isDefined).map(_.get)) {
+            println(op)
+          }
+        } else {
+          println("Due to Syntax Errors, Intermediate Representation not Available")
+        }
+      case "-p" =>
+        val IR = scanAndParse(filename)
+        if(errorCount == 0) println("Parse Succeeded, " + IR.count(_.isDefined) + " ILOC operations found") else {
+          val input = Source.fromFile(filename)
+          println("Parser found " + errorCount + " syntax errors in " + input.getLines().length + " lines of input")
+          input.close()
+        }
 
+      case "-s" =>
+        scanAndParse(filename)
+    }
   }
 
+  def scanAndParse(filename: String): List[Option[Operation]] = {
+    var lineNumber: Int = 1
+    var fullScan: List[List[Any]] = List.empty
+    val input = Source.fromFile(filename)
+    for (line <- input.getLines) {
+      //parseLine(line,lineNumber)
+      val scan: List[Any] = scanner.scanLine(line,lineNumber).reverse
+      //print("Line " + lineNumber + " - ")
+      //if(scan.contains(-1)) println("Error: " + scan) else println("Success: " + scan)
+      lineNumber += 1
+      fullScan = fullScan.::(scan.filterNot(l => l == -1 || l == 10))
+    }
+    fullScan = fullScan.reverse
+    input.close()
+    lineNumber = 1
+    var interRep: List[Option[Operation]] = List.empty
+    for(i <- fullScan) {
+      interRep = interRep.::(parser.parse(i,lineNumber))
+      lineNumber += 1
+    }
+    interRep = interRep.reverse
+    interRep
+  }
 
   class ILOCScanner {
     //val ILOCfunctions: mutable.Set[String] = mutable.Set("load","loadI","store","add","sub","mult","lshift","rshift","output","nop");
@@ -68,6 +129,26 @@ object Frontend {
         }
       }
 
+    def TokenNotation(op: String): Any = {
+      op match {
+        case "load" | "store" => "MEMOP"
+        case "loadI" => "LOADI"
+        case "add" | "sub" | "mult" | "lshift" | "rshift" => "ARITHOP"
+        case "output" => "OUTPUT"
+        case "nop" => "NOP"
+        case "//" => "COMMENT"
+        case "," => "COMMA"
+        case "=>" => "INTO"
+        case _=>
+          if(ValidRegisterLabel(op, true)) {
+            "REG"
+          } else if(ValidConstant(op)) {
+            "CONST"
+          } else {
+            -1
+          }
+      }
+    }
 
     def ValidRegisterLabel(register: String, complete: Boolean): Boolean = {
       if(register.length == 1) {
@@ -76,7 +157,6 @@ object Frontend {
         register.length > 1 && register(0) == 'r' && register.substring(1).filterNot(_.isDigit).isEmpty
       }
     }
-
 
     def ValidConstant(constant: String): Boolean = !constant.isEmpty && constant.filterNot(_.isDigit).isEmpty
 
@@ -101,6 +181,7 @@ object Frontend {
           if(tokenValue != -1) {
             //println("Valid")
             tokenList = tokenList.::(tokenValue)
+            if(flag =="-s" && token != "//") println((TokenNotation(token),"\"" + token + "\""))
             if(token == "//") comment = true
             token = ""
             tokenIndex = 0
@@ -116,7 +197,7 @@ object Frontend {
               //println("Invalid")
               token += c
               //tokenList = tokenList.::(tokenValue)
-              System.err.println("Scanning Error: " + token + " is not a valid word")
+              if(flag == "-p" || flag == "-r") System.err.println("SCANNING ERROR [" + lineNumber + "]: " + token + " is not a valid word")
               tokenList = tokenList.::(tokenValue)
               errorState = true
               token = ""
@@ -143,28 +224,31 @@ object Frontend {
       val tail = line.tail
       head match {
         case 0 | 2 => validMemOp(head.asInstanceOf[Int], tail, lineNumber)
-        case 2 => validLoadI(tail, lineNumber) //Option(validLoadI(tail))
+        case 1 => validLoadI(tail, lineNumber) //Option(validLoadI(tail))
         case 3 | 4 | 5 | 6 | 7  => validArithOp(head.asInstanceOf[Int] ,tail,lineNumber) //Option(validArithOp(tail))
         case 8 => validOutput(tail, lineNumber)//Option(validOutput(tail))
         case 9 => validNop(tail,lineNumber) //Option(validNop(tail))
         case _=>
-          System.err.println("PARSING ERROR [" + lineNumber + "]: Operation begins with invalid OpCode")
+          if(flag == "-p" || flag == "-r") {
+            System.err.println("PARSING ERROR [" + lineNumber + "]: Operation begins with invalid OpCode")
+            errorCount += 1
+          }
           Option.empty
       }
     }
 
     def validMemOp(opCode: Int, tokens: List[Any], lineNumber: Integer): Option[MemOp] = {
-      if(!tokens.head.isInstanceOf[Register]) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Source Register in Memory Operation")
+      if(tokens.isEmpty || !tokens.head.isInstanceOf[Register]) {
+        if(flag == "-p" || flag == "-r") { System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Source Register in Memory Operation"); errorCount += 1}
         Option.empty
-      } else if(tokens(1) != 12) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing \'=>\' in Memory Operation")
+      } else if(tokens.length < 2 || tokens(1) != 12) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing \'=>\' in Memory Operation"); errorCount += 1}
         Option.empty
-      } else if(!tokens(2).isInstanceOf[Register]) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Target Register in Memory Operation")
+      } else if(tokens.length < 3 || !tokens(2).isInstanceOf[Register]) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Target Register in Memory Operation"); errorCount += 1}
         Option.empty
       } else if(tokens.length > 3) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line"); errorCount += 1}
         Option.empty
       }
       else {
@@ -175,18 +259,19 @@ object Frontend {
       }
     }
 
+
     def validLoadI(tokens: List[Any], lineNumber: Int): Option[LoadI] = {
-      if(!tokens.head.isInstanceOf[Constant]) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Constant in LoadI Operation")
+      if(tokens.isEmpty || !tokens.head.isInstanceOf[Constant]) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Constant in LoadI Operation"); errorCount += 1}
         Option.empty
-      } else if(tokens(1) != 12) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing \'=>\' in Memory Operation")
+      } else if(tokens.length < 2 || tokens(1) != 12) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing \'=>\' in Memory Operation"); errorCount += 1}
         Option.empty
-      } else if(!tokens.head.isInstanceOf[Register]) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Target Register in LoadI Operation")
+      } else if(tokens.length < 3 || !tokens(2).isInstanceOf[Register]) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Target Register in LoadI Operation"); errorCount += 1}
         Option.empty
       } else if(tokens.length > 3) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line"); errorCount += 1}
         Option.empty
       } else {
         Option(LoadI(tokens.head.asInstanceOf[Constant],tokens(2).asInstanceOf[Register]))
@@ -194,23 +279,23 @@ object Frontend {
     }
 
     def validArithOp(opCode: Int, tokens: List[Any], lineNumber: Int): Option[ArithOp] = {
-      if(!tokens.head.isInstanceOf[Register]) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing First Source Register in Arithmetic Operation")
+      if(tokens.isEmpty || !tokens.head.isInstanceOf[Register]) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing First Source Register in Arithmetic Operation"); errorCount += 1}
         Option.empty
-      } else if(tokens(1) != 11) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Comma Separation in Arithmetic Operation")
+      } else if(tokens.length < 2 || tokens(1) != 11) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Comma Separation in Arithmetic Operation"); errorCount += 1}
         Option.empty
-      } else if(!tokens(2).isInstanceOf[Register]) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Second Source Register in Arithmetic Operation")
+      } else if(tokens.length < 3 || !tokens(2).isInstanceOf[Register]) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Second Source Register in Arithmetic Operation"); errorCount += 1}
         Option.empty
-      } else if(tokens(3) != 12) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing \'=>\' in Arithmetic Operation")
+      } else if(tokens.length < 4 || tokens(3) != 12) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing \'=>\' in Arithmetic Operation"); errorCount += 1}
         Option.empty
-      } else if(!tokens(4).isInstanceOf[Register]) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Target Register in Arithmetic Operation")
+      } else if(tokens.length < 5 || !tokens(4).isInstanceOf[Register]) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Target Register in Arithmetic Operation"); errorCount += 1}
         Option.empty
-      } else if(tokens.length > 4) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+      } else if(tokens.length > 5) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line"); errorCount += 1}
         Option.empty
       } else {
         opCode match {
@@ -224,11 +309,11 @@ object Frontend {
     }
 
     def validOutput(tokens: List[Any], lineNumber: Int): Option[Output] = {
-      if(!tokens.head.isInstanceOf[Constant]) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Constant for Output")
+      if(tokens.isEmpty || !tokens.head.isInstanceOf[Constant]) {
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Missing Constant for Output"); errorCount += 1}
         Option.empty
       } else if(tokens.length > 1) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line"); errorCount += 1}
         Option.empty
       }else {
         Option(Output(tokens.head.asInstanceOf[Constant]))
@@ -237,7 +322,7 @@ object Frontend {
 
     def validNop(tokens: List[Any], lineNumber: Int): Option[Nop] = {
       if(tokens.nonEmpty) {
-        System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line")
+        if(flag == "-p" || flag == "-r") {System.err.println("PARSING ERROR [" + lineNumber + "]: Extraneous token at end of Line"); errorCount += 1}
         Option.empty
       } else {
         Option(Nop())
